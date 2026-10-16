@@ -1,6 +1,6 @@
 {
   "name": "dsh-gemini-tool-schema",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DeepSeek Harness plugin — normalize tool schemas into the strict OpenAPI 3.0 subset that Gemini function declarations accept (fixes HTTP 400 on MCP and built-in tools).",
   "keywords": [
     "dsh",
