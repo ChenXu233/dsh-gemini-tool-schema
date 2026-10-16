@@ -2,6 +2,10 @@
 
 > Normalize the tool schemas sent to the model into the **strict OpenAPI 3.0 subset that Gemini's function declarations accept**. A TypeScript plugin for DeepSeek Harness.
 
+[![npm version](https://img.shields.io/npm/v/dsh-gemini-tool-schema.svg)](https://www.npmjs.com/package/dsh-gemini-tool-schema)
+[![license](https://img.shields.io/npm/l/dsh-gemini-tool-schema.svg)](LICENSE)
+[![ci](https://github.com/ChenXu233/dsh-gemini-tool-schema/actions/workflows/ci.yml/badge.svg)](https://github.com/ChenXu233/dsh-gemini-tool-schema/actions/workflows/ci.yml)
+
 English | [中文](README.zh.md)
 
 ## The problem

@@ -3,6 +3,10 @@
 > 把发给模型的工具 schema 归一化成 **Gemini function declaration 能接受的 OpenAPI 3.0 子集**。
 > 一个 DeepSeek Harness 插件（TypeScript）。
 
+[![npm version](https://img.shields.io/npm/v/dsh-gemini-tool-schema.svg)](https://www.npmjs.com/package/dsh-gemini-tool-schema)
+[![license](https://img.shields.io/npm/l/dsh-gemini-tool-schema.svg)](LICENSE)
+[![ci](https://github.com/ChenXu233/dsh-gemini-tool-schema/actions/workflows/ci.yml/badge.svg)](https://github.com/ChenXu233/dsh-gemini-tool-schema/actions/workflows/ci.yml)
+
 [English](README.md) | 中文
 
 ## 它解决什么
@@ -63,7 +67,7 @@ npm install && npm run build      # 产出 dist/
 ### 从 npm
 
 ```sh
-npm install dsh-gemini-tool-schema
+npm install dsh-gemini-tool-schema   # https://www.npmjs.com/package/dsh-gemini-tool-schema
 ```
 
 装进 profile 后按包名挂载（`name: dsh-gemini-tool-schema`）。
