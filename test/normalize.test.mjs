@@ -130,6 +130,24 @@ test('empty enum entries are dropped (enum[3]: cannot be empty)', () => {
   assert.deepEqual(lintSchema(out), []);
 });
 
+test('const cannot re-introduce a filtered empty enum entry (real task_board_update)', () => {
+  const out = normalizeSchema({
+    type: 'string',
+    description: 'New permission preset; an empty string clears it back to the session default.',
+    enum: ['read-only', 'workspace-write', 'danger-full-access', ''],
+    const: '',
+  });
+  assert.deepEqual(out.enum, ['read-only', 'workspace-write', 'danger-full-access']);
+  assert.equal(out.const, undefined);
+  assert.deepEqual(lintSchema(out), []);
+});
+
+test('a const that is only an empty string leaves no enum behind', () => {
+  const out = normalizeSchema({ type: 'string', const: '' });
+  assert.equal(out.enum, undefined);
+  assert.deepEqual(lintSchema(out), []);
+});
+
 test('an enum made only of empty entries disappears entirely', () => {
   const out = normalizeSchema({ type: 'string', enum: ['', ''] });
   assert.equal(out.enum, undefined);

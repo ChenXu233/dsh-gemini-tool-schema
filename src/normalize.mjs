@@ -35,6 +35,17 @@ const FORBIDDEN_KEYS = new Set([
   'title',
 ]);
 
+/**
+ * Scalar keywords that strict providers accept and that this module does not
+ * rewrite. Everything else is dropped: `const` (folded into `enum`),
+ * `exclusiveMinimum`/`exclusiveMaximum` (folded into bounds), and unknown
+ * vendor extensions never reach the request.
+ */
+const PASSTHROUGH_KEYS = new Set([
+  'minProperties', 'maxProperties', 'uniqueItems', 'minItems', 'maxItems',
+  'minLength', 'maxLength', 'pattern', 'format', 'default', 'minimum', 'maximum',
+]);
+
 /** Inferred-type preference when a union has several non-null branches. */
 const TYPE_PRIORITY = ['object', 'array', 'string', 'number', 'integer', 'boolean'];
 
@@ -219,10 +230,16 @@ function walk(node, defs, settings, seen, depth) {
     const branches = source[key];
     if (!Array.isArray(branches) || branches.length === 0) continue;
     delete source[key];
-    const resolved = branches.map((branch) => walk(branch, defs, settings, seen, depth + 1));
-    const nullish = resolved.filter(isNullOnly);
-    const nonNull = resolved.filter((branch) => !isNullOnly(branch));
+    // Classify BEFORE normalizing: walking a `{type:'null'}` branch rewrites it
+    // to `{type:'string', nullable:true}`, which would hide the null marker and
+    // silently drop the nullability of the union.
+    const nullish = branches.filter((branch) => isNullOnly(branch));
+    const nonNull = branches
+      .filter((branch) => !isNullOnly(branch))
+      .map((branch) => walk(branch, defs, settings, seen, depth + 1));
     if (nullish.length > 0) nullable = true;
+    // A branch may also declare nullability itself (`type: ['string','null']`).
+    if (nonNull.some((branch) => branch?.nullable === true)) nullable = true;
     if (nonNull.length === 0) {
       Object.assign(source, { type: 'string', description: source.description ?? '(nullable)' });
       continue;
@@ -265,9 +282,17 @@ function walk(node, defs, settings, seen, depth) {
     if (enumValues.length === 0) enumValues = undefined;
   }
   if (source.const !== undefined) {
-    const constValues = Array.isArray(source.const) ? source.const : [source.const];
-    enumValues = mergeEnums(enumValues, constValues);
-    nullable = nullable || source.const === null;
+    // `const` folds into `enum`, and must be filtered too: a schema carrying
+    // both `enum: [..., '']` and `const: ''` re-introduced the empty entry
+    // that the enum pass had just removed (real case: task_board_update.permission).
+    const constValues = (Array.isArray(source.const) ? source.const : [source.const])
+      .filter((value) => value !== null && !isEmptyEnumEntry(value));
+    if (source.const === null) nullable = true;
+    if (constValues.length > 0) {
+      enumValues = mergeEnums(enumValues, constValues);
+    } else if (enumValues !== undefined && enumValues.length === 0) {
+      enumValues = undefined;
+    }
   }
   if (enumValues !== undefined) {
     const enumTypes = [...new Set(enumValues.map(typeOfValue))];
@@ -275,6 +300,10 @@ function walk(node, defs, settings, seen, depth) {
     else if (enumTypes.includes('integer') && enumTypes.every((t) => t === 'integer' || t === 'number')) declared = 'number';
     else if (enumTypes.length > 1) declared = 'string'; // heterogeneous enums are stringified by strict providers
   }
+
+  // An explicit `nullable` on the input survives (this also makes the transform
+  // idempotent now that `nullable` is no longer carried over as a stray key).
+  if (source.nullable === true) nullable = true;
 
   // ---- 4. rebuild the node in a canonical, stable key order -----------------
   const out = { type: declared };
@@ -312,14 +341,14 @@ function walk(node, defs, settings, seen, depth) {
   }
   if (nullable && settings.nullable) out.nullable = true;
 
-  // ---- 5. carry over any remaining provider-safe keys -----------------------
+  // ---- 5. carry over provider-safe scalars, and only those ------------------
+  // An allow-list rather than a deny-list: an unknown keyword that leaks into a
+  // strict provider request rejects the whole request, which is the class of
+  // bug this module exists to remove.
   for (const [key, value] of Object.entries(source)) {
-    if (key in out || FORBIDDEN_KEYS.has(key)) continue;
-    if (key === 'type' || key === 'properties' || key === 'required' || key === 'items' || key === 'enum') continue;
-    if (key === 'allOf' || key === 'anyOf' || key === 'oneOf') continue;
-    if (key === 'exclusiveMinimum' || key === 'exclusiveMaximum') continue;
-    if (value === undefined) continue;
-    if (isPlainObject(value) || Array.isArray(value)) continue; // no unknown structural keywords
+    if (key in out || value === undefined) continue;
+    if (!PASSTHROUGH_KEYS.has(key) && !FORBIDDEN_KEYS.has(key)) continue;
+    if (FORBIDDEN_KEYS.has(key)) continue;
     out[key] = clone(value);
   }
   return out;

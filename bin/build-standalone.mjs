@@ -31,6 +31,7 @@ const bundle = [
   normalize,
   '// ------------------------------ plugin ------------------------------',
   plugin,
+  'export { normalizeSchema, lintSchema };',
 ].join('\n\n');
 
 mkdirSync(dirname(out), { recursive: true });
