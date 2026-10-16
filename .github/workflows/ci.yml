@@ -10,10 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: ['20', '22']
+        # Node 22.6+ can run the TypeScript tests directly (type stripping).
+        node: ['22', '24']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: node --test test/normalize.test.mjs
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build

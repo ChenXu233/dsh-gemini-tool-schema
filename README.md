@@ -1,74 +1,70 @@
-# dsh-tool-schema-compat
+# dsh-gemini-tool-schema
 
-> A DeepSeek Harness plugin that normalizes the tool schemas sent to the model, so a single stray field stops breaking a whole request on strict function-calling providers (Gemini in particular).
+> Normalize the tool schemas sent to the model into the **strict OpenAPI 3.0 subset that Gemini's function declarations accept**. A TypeScript plugin for DeepSeek Harness.
 
 English | [中文](README.zh.md)
 
 ## The problem
 
-Strict providers accept only an OpenAPI-3.0-flavored subset of JSON Schema. Google Gemini's `functionDeclarations[].parameters` is the strictest common case and rejects the **entire request** (HTTP 400) when:
+Strict providers accept only a *subset* of JSON Schema. Google Gemini's `functionDeclarations[].parameters` rejects the **whole request** (HTTP 400) when:
 
 | Real error | Offending schema | Source |
 | --- | --- | --- |
-| `functionDeclaration ... schema didn't specify the schema type field` | `{ anyOf: [{type:'string',enum:[...]}, {type:'null'}] }` — no `type` | Playwright MCP `browser_emulate_media.colorScheme` (from `z.string().nullable()`) |
-| `...properties[v_types].items: missing field` | `{ type: 'array' }` — no `items` | Lingshu MCP (`lingshu_cg`: 17 params, `lingshu_stg`: 2) |
+| `schema didn't specify the schema type field` | `{ anyOf: [{type:'string',…}, {type:'null'}] }` — no `type` | Playwright MCP `browser_emulate_media.colorScheme` (`z.string().nullable()`) |
+| `properties[v_types].items: missing field` | `{ type: 'array' }` — no `items` | Lingshu MCP `lingshu_cg` / `lingshu_stg` (19 params) |
+| `properties[permission].enum[3]: cannot be empty` | `enum: [..., '']` | DSH built-in `task_board_update.permission` |
 
-Both are perfectly legal everywhere else, which is why the failure only appears once you route through Gemini.
+All three are legal elsewhere, which is why the failure only shows up on a Gemini-flavoured route.
 
-## Why a Harness hook instead of an MCP proxy
+## Why a Harness hook
 
-An MCP proxy can only reach the servers it wraps. Built-in tools and tools registered by other plugins never cross an MCP transport, so a proxy cannot fix them. Normalizing at Harness assembly time fixes **every** tool at once.
-
-## How it works
-
-Each agent step assembles `PromptAssembly { sections, contexts, tools, variables }`; that `tools` array goes straight into the provider request. The plugin hooks the `system-prompt/assemble` waterfall and returns a rewritten assembly:
-
-```js
-ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
-  const assembly = await next()   // let downstream (model selection) finish first
-  return { ...assembly, tools: normalized }
-}, { prepend: true })
-```
-
-Pure plugin, no core patching; registrations unwind with the plugin; the transform is pure, idempotent and deterministic, so it does not churn the request header or the prompt cache.
+An MCP proxy only reaches the servers it wraps. Built-in tools and tools registered by other plugins never cross an MCP transport, so normalizing at Harness assembly time is the only fix that covers **every** tool at once.
 
 ## Install
+
+```sh
+git clone https://github.com/ChenXu233/dsh-gemini-tool-schema.git
+cd dsh-gemini-tool-schema && npm install && npm run build
+```
 
 Append to `<DSH home>/profiles/<profile>/cordis.patch.yml`:
 
 ```yaml
 - insert:
-    - id: tool-schema-compat
-      name: '/absolute/path/to/dsh-tool-schema-compat/src/index.mjs'
+    - id: gemini-tool-schema
+      name: '/absolute/path/to/dsh-gemini-tool-schema/dist/index.js'
       config:
-        mode: match
-        match: [gemini, google, vertex]
-        logFile: '/absolute/path/to/.dsh/logs/tool-schema-compat.log'
+        mode: list
+        apis: ['gemini', 'google', 'vertex']
 ```
 
-Or install the package into the profile and mount it by name.
+Or `npm install dsh-gemini-tool-schema` and mount it by package name.
 
-### Hot reload caveats (measured on DSH 44.0.0)
+## Configuration
 
-Config HMR re-mounts the plugin, but Node never re-evaluates an already-imported
-file URL — edited code keeps running until you point `name:` at a **new path
-and change the row `id`** (a `name` change alone does not reload), or restart.
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `mode` | `list` | `all` every request · `list` matching APIs only · `off` disabled |
+| `apis` | `['gemini','google','vertex']` | API patterns, **compiled as regular expressions** |
+| `unknownApi` | `apply` | When the route cannot be read: `apply` or `skip` |
+| `itemsFallback` | `{type:'string'}` | Element schema for arrays that omit `items` |
+| `nullable` | `true` | Emit `nullable: true` for null unions |
+| `dryRun` | `false` | Report and lint, but send the original schemas |
+| `logFile` / `logLevel` | none / `info` | One diagnostic line per assembly |
+| `dumpDir` / `dumpSchemas` | none / `true` | Dump the model-facing tool set for offline auditing |
 
-## Config
-
-`mode` (`match`|`always`|`off`), `match` (substrings), `unknownRoute` (`apply`|`skip`), `itemsFallback`, `nullable`, `dryRun`, `logFile`, `logLevel`. See [README.zh.md](README.zh.md) for the full table.
+Patterns match against `provider/model` (e.g. `gemini-lumiya/gemini-4-argon`) and accept substring, regex, and `/pattern/flags` forms; an entry that does not compile degrades to a case-insensitive substring match. `'*'` matches everything, or set `mode: all`.
 
 ## Rules
 
-Every node gets a `type`; every array gets `items`; `$ref`/`$defs` are inlined (cycle-safe); keywords strict providers reject are stripped; `required` is narrowed to real properties; exclusive bounds are folded in.
+Every node gets a `type`; every array gets `items`; `enum` entries are never empty (and `const` cannot reintroduce one); `$ref`/`$defs` are inlined cycle-safely; unsupported keywords are stripped and the remaining scalars pass an allow-list; `required` is narrowed to real properties.
 
-## Test
+## Development
 
 ```sh
-node --test test/normalize.test.mjs
+npm test        # Node ≥22.6 runs the TS tests directly — 36 tests
+npm run build   # tsc → dist/
 ```
-
-13 tests, including one over the **82 real MCP tools** cached on this machine: violations before, zero after.
 
 ## License
 

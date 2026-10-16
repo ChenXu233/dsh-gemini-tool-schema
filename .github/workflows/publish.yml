@@ -1,0 +1,42 @@
+name: publish
+
+# Publishes on a version tag (v0.2.0, v0.2.1, …) or from the Actions UI.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Required for npm "trusted publishing" (OIDC): no long-lived token needed.
+  id-token: write
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      # Two supported routes:
+      #   1. add a repo secret named NPM_TOKEN (automation token with publish rights)
+      #   2. configure a Trusted Publisher on npmjs.com and leave the secret unset —
+      #      this step then authenticates with the workflow's OIDC identity.
+      - name: Publish to npm
+        run: |
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "publishing with NPM_TOKEN"
+            export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          else
+            echo "publishing with npm trusted publishing (OIDC)"
+            unset NODE_AUTH_TOKEN
+          fi
+          npm publish --provenance --access public
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

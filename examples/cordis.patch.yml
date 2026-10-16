@@ -1,10 +1,30 @@
 # Profile patch that mounts the plugin from a source checkout.
-# Append this to <DSH home>/profiles/<profile>/cordis.patch.yml
+#
+#   git clone https://github.com/ChenXu233/dsh-gemini-tool-schema.git
+#   cd dsh-gemini-tool-schema && npm install && npm run build
+#
+# Then append this entry to <DSH home>/profiles/<profile>/cordis.patch.yml
 # (`dsh --profile web --dump-config` prints the profile this machine boots).
+#
+# Hot reload: a config change re-mounts the plugin within seconds, but Node does
+# not re-evaluate an already-imported file URL — after editing the code, point
+# `name` at a fresh build AND change the row `id`, or restart the app.
 - insert:
-    - id: tool-schema-compat
-      name: 'E:/git/dsh-tool-schema-compat/src/index.mjs'
+    - id: gemini-tool-schema
+      name: '/absolute/path/to/dsh-gemini-tool-schema/dist/index.js'
       config:
-        mode: match
-        match: [gemini, google, vertex]
-        logFile: <DSH home>/logs/tool-schema-compat.log
+        # all | list | off
+        mode: list
+        # Compiled as regular expressions against "provider/model".
+        # A plain word works as a substring; '/pattern/flags' is also accepted.
+        apis:
+          - gemini
+          - '^vertex-'
+          - '/gemini-4-argon$/i'
+        # api: what to do when the route cannot be read (apply | skip)
+        unknownApi: apply
+        itemsFallback:
+          type: string
+        logFile: '/absolute/path/to/.dsh/logs/gemini-tool-schema.log'
+        logLevel: info
+        # dumpDir: '/absolute/path/to/.dsh/logs/gemini-tool-schema-dumps'

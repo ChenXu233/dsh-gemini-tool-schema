@@ -1,27 +1,36 @@
 {
-  "name": "dsh-tool-schema-compat",
-  "version": "0.1.0",
-  "description": "DeepSeek Harness plugin: normalize tool JSON Schemas before they reach the model, so MCP and built-in tools stop breaking strict providers (Gemini function declarations). Hooks system-prompt/assemble.",
+  "name": "dsh-gemini-tool-schema",
+  "version": "0.2.0",
+  "description": "DeepSeek Harness plugin — normalize tool schemas into the strict OpenAPI 3.0 subset that Gemini function declarations accept (fixes HTTP 400 on MCP and built-in tools).",
   "keywords": [
     "dsh",
     "deepseek-harness",
     "cordis",
     "plugin",
-    "mcp",
     "gemini",
-    "json-schema",
     "function-calling",
-    "tool-schema"
+    "tool-schema",
+    "json-schema",
+    "openapi",
+    "mcp"
   ],
   "license": "MIT",
+  "author": "ChenXu233",
   "type": "module",
-  "main": "src/index.mjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.mjs",
-    "./normalize": "./src/normalize.mjs"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./normalize": {
+      "types": "./dist/normalize.d.ts",
+      "default": "./dist/normalize.js"
+    }
   },
   "files": [
-    "src",
+    "dist",
     "README.md",
     "README.zh.md",
     "LICENSE"
@@ -30,16 +39,25 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/normalize.test.mjs test/plugin.test.mjs",
-    "build": "node bin/build-standalone.mjs",
-    "lint:schema": "node bin/schema-lint.mjs"
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/normalize.test.ts test/plugin.test.ts",
+    "prepublishOnly": "npm run build"
   },
-  "bin": {
-    "tool-schema-lint": "bin/schema-lint.mjs"
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ChenXu233/dsh-tool-schema-compat.git"
+    "url": "git+https://github.com/ChenXu233/dsh-gemini-tool-schema.git"
   },
-  "author": "ChenXu233"
+  "homepage": "https://github.com/ChenXu233/dsh-gemini-tool-schema#readme",
+  "bugs": {
+    "url": "https://github.com/ChenXu233/dsh-gemini-tool-schema/issues"
+  }
 }
