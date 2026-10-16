@@ -1,0 +1,45 @@
+{
+  "name": "dsh-tool-schema-compat",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin: normalize tool JSON Schemas before they reach the model, so MCP and built-in tools stop breaking strict providers (Gemini function declarations). Hooks system-prompt/assemble.",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "mcp",
+    "gemini",
+    "json-schema",
+    "function-calling",
+    "tool-schema"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./normalize": "./src/normalize.mjs"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "lint": "node --test test/",
+    "lint:schema": "node bin/schema-lint.mjs"
+  },
+  "bin": {
+    "tool-schema-lint": "bin/schema-lint.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChenXu233/dsh-tool-schema-compat.git"
+  },
+  "author": "ChenXu233"
+}

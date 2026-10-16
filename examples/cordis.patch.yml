@@ -1,0 +1,10 @@
+# Profile patch that mounts the plugin from a source checkout.
+# Append this to <DSH home>/profiles/<profile>/cordis.patch.yml
+# (`dsh --profile web --dump-config` prints the profile this machine boots).
+- insert:
+    - id: tool-schema-compat
+      name: 'E:/git/dsh-tool-schema-compat/src/index.mjs'
+      config:
+        mode: match
+        match: [gemini, google, vertex]
+        logFile: <DSH home>/logs/tool-schema-compat.log
