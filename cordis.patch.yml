@@ -1,0 +1,14 @@
+# Installed by `dsh plugin add dsh-gemini-tool-schema`.
+#
+# Mounts the plugin that normalizes every tool schema before it reaches the
+# model, so strict providers (Gemini function declarations) stop rejecting the
+# whole request over one offending tool.
+#
+# Tune it under the row's config: mode all|list|off, apis (regular expressions),
+# itemsFallback, logFile / dumpDir for diagnostics.
+- insert:
+    - id: gemini-tool-schema
+      name: dsh-gemini-tool-schema
+      config:
+        mode: list
+        apis: [gemini, google, vertex]
