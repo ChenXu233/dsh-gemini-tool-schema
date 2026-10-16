@@ -30,8 +30,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/",
-    "lint": "node --test test/",
+    "test": "node --test test/normalize.test.mjs test/plugin.test.mjs",
+    "build": "node bin/build-standalone.mjs",
     "lint:schema": "node bin/schema-lint.mjs"
   },
   "bin": {

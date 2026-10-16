@@ -62,6 +62,18 @@ ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
       name: dsh-tool-schema-compat
 ```
 
+### 方式 C：单文件 + 版本化路径（热更新推荐）
+
+DSH 的配置 HMR 会**重新挂载**插件，但 Node 的 ESM 缓存**不会重新求值**同一个文件 —— 也就是说，改了插件代码，光靠配置热重载是**不生效的**（要重启 app）。绕过办法是每次构建输出到一个**新路径**：
+
+```sh
+node bin/build-standalone.mjs ~/.dsh/plugins/tool-schema-compat/0.1.0-20261016a/index.mjs
+```
+
+再把 patch 的 `name:` 指向这个新文件即可秒级热更新，无需重启。
+
+> 实测（DSH 44.0.0）：配置改动 → 几秒内自动重挂载；代码改动 → 必须换路径或重启。
+
 ## 配置
 
 | 字段 | 默认 | 说明 |
