@@ -70,9 +70,21 @@ DSH 的配置 HMR 会**重新挂载**插件，但 Node 的 ESM 缓存**不会重
 node bin/build-standalone.mjs ~/.dsh/plugins/tool-schema-compat/0.1.0-20261016a/index.mjs
 ```
 
-再把 patch 的 `name:` 指向这个新文件即可秒级热更新，无需重启。
+再把 patch 里的 **`id` 和 `name:` 一起改掉**，即可秒级热更新，无需重启。
 
-> 实测（DSH 44.0.0）：配置改动 → 几秒内自动重挂载；代码改动 → 必须换路径或重启。
+### 热更新的两个坑（DSH 44.0.0 实测）
+
+1. **模块缓存**：配置 HMR 会重新挂载插件（`apply` 被再次调用），但 Node 不会重新求值同一个文件 URL —— 光改插件代码**不生效**，仍在跑旧代码。
+2. **触发条件**：只改 `name:`（模块路径）**不足以重载**；**改行 `id`** 才会让 loader 把它当成一个新条目重新 import。
+
+因此开发循环是：
+
+```sh
+node bin/build-standalone.mjs ~/.dsh/plugins/tool-schema-compat/0.1.1/index.mjs
+# 然后把 patch 里的 id: tool-schema-compat → tool-schema-compat-v2，并更新 name:
+```
+
+> 做一个稳定部署时，把 id 固定、改完代码重启一次 app 最省心。
 
 ## 配置
 

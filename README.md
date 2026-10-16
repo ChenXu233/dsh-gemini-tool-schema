@@ -48,6 +48,12 @@ Append to `<DSH home>/profiles/<profile>/cordis.patch.yml`:
 
 Or install the package into the profile and mount it by name.
 
+### Hot reload caveats (measured on DSH 44.0.0)
+
+Config HMR re-mounts the plugin, but Node never re-evaluates an already-imported
+file URL — edited code keeps running until you point `name:` at a **new path
+and change the row `id`** (a `name` change alone does not reload), or restart.
+
 ## Config
 
 `mode` (`match`|`always`|`off`), `match` (substrings), `unknownRoute` (`apply`|`skip`), `itemsFallback`, `nullable`, `dryRun`, `logFile`, `logLevel`. See [README.zh.md](README.zh.md) for the full table.
