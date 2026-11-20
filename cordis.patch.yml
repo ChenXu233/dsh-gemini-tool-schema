@@ -6,6 +6,12 @@
 #
 # Tune it under the row's config: mode all|list|off, apis (regular expressions),
 # itemsFallback, logFile / dumpDir for diagnostics.
+#
+# `signatures` repairs Gemini tool-call replay on OpenAI-compatible relays that
+# drop `tool_calls[].extra_content.google.thought_signature`: captured signatures
+# are re-attached, and an unsignable exchange is flattened into text. Options:
+# mode auto|flatten|off (default auto), models / urls (regular expressions),
+# store (JSON path for durable capture).
 - insert:
     - id: gemini-tool-schema
       name: dsh-gemini-tool-schema

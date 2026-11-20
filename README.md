@@ -24,6 +24,39 @@ All three are legal elsewhere, which is why the failure only shows up on a Gemin
 
 An MCP proxy only reaches the servers it wraps. Built-in tools and tools registered by other plugins never cross an MCP transport, so normalizing at Harness assembly time is the only fix that covers **every** tool at once.
 
+## Tool-call replay repair (v0.4.0)
+
+> Symptom: the second step of any tool-using turn fails outright with `400 Function call is missing a thought_signature in functionCall parts`.
+
+A Gemini reasoning model stamps every `functionCall` with an encrypted `thoughtSignature` and rejects the whole request when a replayed call lost it. Native Google transports carry it for you. On an OpenAI-compatible relay the single legal carrier is `tool_calls[].extra_content.google.thought_signature` — and **many relays drop it**, streaming and non-streaming alike.
+
+The plugin therefore:
+
+1. **captures** a signature whenever the relay does send one (SSE or JSON), keyed by tool-call id;
+2. **re-attaches** it to `tool_calls[]` on the next request that replays that call id;
+3. **degrades** when nothing was captured: the exchange is flattened into assistant text plus a user-role result, the one history shape such an upstream still accepts.
+
+This lives in the **transport layer** (a shim around `globalThis.fetch`), not in a hook: the agent loop freezes `GenerateOptions` and every message in it before dispatch, so no `llm/stream` listener can rewrite history — but pi-ai builds its client per request and reads the global fetch then. Bodies are only touched when the URL is `*/chat/completions` and the model matches `signatures.models`, so a native `generateContent` route is never affected.
+
+```yaml
+- insert:
+    - id: gemini-tool-schema
+      name: dsh-gemini-tool-schema
+      config:
+        signatures:
+          mode: auto
+          store: ~/.dsh/gemini-tool-signatures.json
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `signatures.mode` | `auto` | `auto` attach captured signatures, flatten the rest · `flatten` always flatten · `off` leave requests alone |
+| `signatures.models` | `['gemini','google','vertex']` | Model-name patterns, **compiled as regular expressions** |
+| `signatures.urls` | `[]` | Extra chat-completions URL patterns for nonstandard relay paths |
+| `signatures.store` | none (memory only) | JSON path so captured signatures survive a restart |
+
+**This is not the root fix.** The real fix belongs in the relay: forward `extra_content.google.thought_signature` untouched so a client has something to replay. The plugin only keeps a signature-less relay working, at the cost of replaying that exchange as text instead of a real `functionCall`.
+
 ## Install
 
 ```sh

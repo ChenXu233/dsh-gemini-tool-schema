@@ -42,6 +42,39 @@ ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
 - 纯函数、**幂等且确定性** —— 反复归一化不会让工具头或 prompt 缓存抖动；
 - 单个工具的归一化抛错只影响它自己，绝不连累整个请求。
 
+## 工具调用回放修复（v0.4.0）
+
+> 症状：多轮工具调用的第二步直接 400 —— `Function call is missing a thought_signature in functionCall parts`。
+
+Gemini 推理模型给每个 `functionCall` 配一段加密的 `thoughtSignature`，下一轮必须原样带回，少了就整包拒收。原生 Google 传输会替我们带上；走 OpenAI 兼容的中转（new-api 类网关、部分 OpenRouter 路由）只有一个合法载体 `tool_calls[].extra_content.google.thought_signature`，而**不少中转会把它吞掉** —— 实测某些网关的流式和非流式响应里都根本没有这个字段。
+
+插件做三件事：
+
+1. **捕获**：只要中转把签名发回来（流式 SSE 或非流式 JSON），就按 tool-call id 存起来。
+2. **回填**：下次请求遇到同一 call id，把 `extra_content.google.thought_signature` 补回 `tool_calls[]`。
+3. **降级**：一个签名都拿不到时，把这次工具交换摊平成文本（assistant 叙述 + user 角色的结果），这是上游唯一还接受的形状。
+
+实现落在 **transport 层**（包一层 `globalThis.fetch`），不是 hook：agent loop 在分发前把 `GenerateOptions` 和每条 message 都 `Object.freeze` 了，任何 `llm/stream` listener 都改不动历史，而 pi-ai 每次请求现建客户端、现取全局 fetch，正好留了这个缝。命中条件是 `*/chat/completions` + 模型名匹配 `signatures.models`，所以原生 `generateContent` 路由完全不受影响。
+
+```yaml
+- insert:
+    - id: gemini-tool-schema
+      name: dsh-gemini-tool-schema
+      config:
+        signatures:
+          mode: auto
+          store: ~/.dsh/gemini-tool-signatures.json
+```
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `signatures.mode` | `auto` | `auto` 有签名就回填、没有就摊平；`flatten` 一律摊平；`off` 不动任何请求 |
+| `signatures.models` | `['gemini','google','vertex']` | 模型名的**正则**列表，命中才处理 |
+| `signatures.urls` | `[]` | 额外的 chat 端点正则（中转路径不标准时用） |
+| `signatures.store` | 无（仅内存） | 签名 JSON 落盘路径，重启后仍能精确回放 |
+
+**这不是治本。** 真正的修复在中转侧：让网关把 `extra_content.google.thought_signature` 原样透传出去，客户端才有东西可回填。插件只是让签名缺席时仍能跑通，代价是那一段历史从真实 `functionCall` 降级成文本。
+
 ## 安装
 
 ### 从源码（本地开发）

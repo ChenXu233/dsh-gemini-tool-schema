@@ -16,6 +16,9 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { lintSchema, normalizeSchema, type JsonSchema } from './normalize.ts'
+import { installFetchPatch } from './fetch-patch.ts'
+import { SignatureStore } from './signature-store.ts'
+import { isChatCompletionsUrl, type SignatureMode } from './signature.ts'
 
 /** Plugin id shown by the loader. */
 export const name = 'gemini-tool-schema'
@@ -60,6 +63,43 @@ export interface Config {
   dumpDir?: string
   /** Include full schemas in the dump; `false` dumps names only. @default true */
   dumpSchemas?: boolean
+  /**
+   * Repair Gemini tool-call replay on OpenAI-compatible relays — see
+   * {@link SignatureOptions}. Enabled for Gemini models by default.
+   */
+  signatures?: SignatureOptions
+}
+
+/**
+ * Gemini thought-signature repair.
+ *
+ * A Gemini reasoning model stamps every `functionCall` with an encrypted
+ * `thoughtSignature` and rejects a replayed call that lost it
+ * (`400 Function call is missing a thought_signature in functionCall parts`).
+ * Native Google transports carry it; OpenAI-compatible relays only have
+ * `tool_calls[].extra_content.google.thought_signature`, and many drop it.
+ *
+ * This repair captures signatures wherever a relay does send them, attaches
+ * them on replay, and falls back to flattening the tool exchange into text when
+ * none was captured — the one history shape such an upstream still accepts.
+ */
+export interface SignatureOptions {
+  /**
+   * `auto` attaches captured signatures and flattens only what it cannot sign;
+   * `flatten` always flattens; `off` leaves every request untouched.
+   * @default 'auto'
+   */
+  mode?: SignatureMode
+  /**
+   * Model-name patterns (regular expressions, as in {@link Config.apis}) that
+   * require thought signatures.
+   * @default ['gemini', 'google', 'vertex']
+   */
+  models?: string[]
+  /** Extra chat-completions URL patterns for relays with a nonstandard path. */
+  urls?: string[]
+  /** Persist captured signatures here (JSON) so a restart can still replay them. */
+  store?: string
 }
 
 /** The default API patterns: every Gemini-flavored route, by substring. */
@@ -133,6 +173,15 @@ interface ResolvedConfig {
   logLevel: 'silent' | 'info' | 'debug'
   dumpDir?: string
   dumpSchemas: boolean
+  signatures: ResolvedSignatures
+}
+
+/** Validated {@link SignatureOptions}. */
+interface ResolvedSignatures {
+  mode: SignatureMode
+  matchers: ApiMatcher[]
+  urlMatchers: ApiMatcher[]
+  store?: string
 }
 
 /**
@@ -179,6 +228,25 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
   if (logLevel !== 'silent' && logLevel !== 'info' && logLevel !== 'debug') {
     throw new Error(`${name}: logLevel must be silent|info|debug, received ${JSON.stringify(logLevel)}`)
   }
+  const signatureConfig: SignatureOptions = config.signatures ?? {}
+  if (typeof signatureConfig !== 'object' || signatureConfig === null) {
+    throw new Error(`${name}: signatures must be an object`)
+  }
+  const signatureMode = signatureConfig.mode ?? 'auto'
+  if (signatureMode !== 'auto' && signatureMode !== 'flatten' && signatureMode !== 'off') {
+    throw new Error(`${name}: signatures.mode must be auto|flatten|off, received ${JSON.stringify(signatureMode)}`)
+  }
+  const signatureModels = signatureConfig.models ?? DEFAULT_APIS
+  if (!Array.isArray(signatureModels) || signatureModels.some((entry) => typeof entry !== 'string')) {
+    throw new Error(`${name}: signatures.models must be an array of strings`)
+  }
+  const signatureUrls = signatureConfig.urls ?? []
+  if (!Array.isArray(signatureUrls) || signatureUrls.some((entry) => typeof entry !== 'string')) {
+    throw new Error(`${name}: signatures.urls must be an array of strings`)
+  }
+  if (signatureConfig.store !== undefined && typeof signatureConfig.store !== 'string') {
+    throw new Error(`${name}: signatures.store must be a string path`)
+  }
   return {
     mode,
     matchers: compileApiMatchers(apis),
@@ -190,6 +258,12 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     logLevel,
     dumpDir: config.dumpDir,
     dumpSchemas: config.dumpSchemas !== false,
+    signatures: {
+      mode: signatureMode,
+      matchers: compileApiMatchers(signatureModels),
+      urlMatchers: compileApiMatchers(signatureUrls),
+      ...signatureConfig.store === undefined ? {} : { store: signatureConfig.store },
+    },
   }
 }
 
@@ -269,6 +343,24 @@ export function apply(ctx: PluginContext, config?: Config): void {
   console.log(`[${name}] loaded (mode=${resolved.mode}, apis=${resolved.matchers.map((m) => m.raw).join(',') || '-'}, dryRun=${resolved.dryRun})`)
   writeLog(resolved, `[load] mode=${resolved.mode} apis=${resolved.matchers.map((m) => m.raw).join(',')} unknownApi=${resolved.unknownApi}`)
 
+  // The transport shim is the only seam that can still change what a request
+  // carries: the agent loop freezes its request and every message in it before
+  // dispatch, so a hook cannot rewrite the history.
+  const signatures = resolved.signatures
+  if (signatures.mode !== 'off') {
+    const store = new SignatureStore(signatures.store === undefined ? {} : { path: signatures.store })
+    installFetchPatch({
+      mode: signatures.mode,
+      matchesUrl: (url) => isChatCompletionsUrl(url) || signatures.urlMatchers.some((matcher) => matcher.test(url)),
+      matchesModel: (model) => signatures.matchers.some((matcher) => matcher.test(model)),
+      lookup: (callId) => store.get(callId),
+      remember: (callId, signature) => { store.set(callId, signature) },
+      log: (line) => writeLog(resolved, line),
+    })
+    console.log(`[${name}] tool-call replay repair: mode=${signatures.mode} models=${signatures.matchers.map((matcher) => matcher.raw).join(',') || '-'}`)
+    writeLog(resolved, `[signatures] mode=${signatures.mode} models=${signatures.matchers.map((matcher) => matcher.raw).join(',') || '-'} store=${store.path ?? 'memory'}`)
+  }
+
   // `prepend` runs this listener first so `next()` observes the finished
   // assembly, including the route variables written by model selection.
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
@@ -312,3 +404,23 @@ export function apply(ctx: PluginContext, config?: Config): void {
 
 export { lintSchema, normalizeSchema } from './normalize.ts'
 export type { JsonSchema, NormalizeOptions } from './normalize.ts'
+export {
+  collectSignaturesFromJson,
+  collectSignaturesFromSse,
+  isChatCompletionsUrl,
+  rewriteChatBody,
+  textOf,
+} from './signature.ts'
+export type {
+  ChatBody,
+  ChatMessage,
+  ChatToolCall,
+  RewriteOptions,
+  RewriteResult,
+  SignatureLookup,
+  SignatureMode,
+} from './signature.ts'
+export { SignatureStore, expandHome } from './signature-store.ts'
+export type { SignatureStoreOptions } from './signature-store.ts'
+export { installFetchPatch, isFetchPatchInstalled } from './fetch-patch.ts'
+export type { FetchPatchHandle, FetchPatchOptions } from './fetch-patch.ts'

@@ -37,7 +37,8 @@ function mount(config: Config = {}) {
       captured = { listener, options }
     },
   } as unknown as PluginContext
-  apply(ctx, config)
+  // Keep the tests hermetic: the transport shim installs on the real global fetch.
+  apply(ctx, { signatures: { mode: 'off' }, ...config })
   assert.ok(captured, 'the plugin must register a listener')
   return captured
 }
@@ -107,7 +108,15 @@ test('a tool with a hostile parameters value does not break the request', async 
 })
 
 test('an invalid config fails fast', () => {
-  for (const bad of [{ mode: 'nope' }, { unknownApi: 'nope' }, { apis: 'gemini' }, { logLevel: 'nope' }]) {
+  for (const bad of [
+    { mode: 'nope' },
+    { unknownApi: 'nope' },
+    { apis: 'gemini' },
+    { logLevel: 'nope' },
+    { signatures: { mode: 'nope' } },
+    { signatures: { models: 'gemini' } },
+    { signatures: { urls: 3 } },
+  ]) {
     assert.throws(() => apply({ on: () => {} } as unknown as PluginContext, bad as Config), /gemini-tool-schema/)
   }
 })
